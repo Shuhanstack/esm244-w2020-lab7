@@ -1,0 +1,159 @@
+---
+title: "Clustering"
+subtitle: "Point pattern analysis"
+author: "Shuhan Song"
+date: "2/20/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(here)
+library(janitor)
+library(plotly)
+library(tmap)
+library(sf)
+library(maptools)
+library(sp)
+library(spatstat)
+library(raster)
+library(NbClust)
+library(cluster)
+library(factoextra)
+library(dendextend)
+library(ggdendro)
+```
+
+```{r}
+# get data
+
+# Red tree voles in Humboldt County
+
+
+voles <- read_sf(dsn = here("data", "redtreevoledata"), layer = "ds033") %>% # can set crs = 4326 in read_sf after layer
+  dplyr::select(COUNTY) %>% 
+  dplyr::filter(COUNTY == "HUM") %>% 
+  st_transform(crs = 6345)
+
+plot(voles)
+
+# read in data for Humboldt County
+
+humboldt <- read_sf(dsn = here("data", "redtreevoledata"), layer = "california_county_shape_file", crs = 6345) %>% 
+  filter(NAME == "Humboldt") %>% 
+  dplyr::select(NAME)
+
+plot(humboldt)
+
+tm_shape(humboldt) +
+  tm_fill(col = "gray90",
+          alpha = 0.5) +
+  tm_borders() +
+  tm_shape(voles) +
+  tm_dots(size = 0.2) 
+
+```
+ Convert vole events and Humboldt polygon to point pattern + window
+ 
+```{r}
+voles_sp <- methods::as(voles, "Spatial")
+
+voles_ppp <- methods::as(voles_sp, Class = "ppp")
+```
+ 
+## Cluster analysis
+
+### k-means
+ 
+```{r}
+iris_nice <- iris %>% 
+  clean_names()
+
+ggplot(data = iris_nice) +
+  geom_point(aes(x = petal_length, 
+                 y = petal_width,
+                 color = species))
+
+# How many clusters does R think there should be for this dataset?
+
+number_est <- NbClust(iris_nice[1:4], 
+                      min.nc = 2,
+                      max.nc = 10,
+                      method = "kmeans")
+
+# Dindex Values: how many algorithm picked this number of clusters
+# even though 2 is mostly picked by R, 3 is still the best cluster (R: wtf???)
+
+
+iris_km <- kmeans(iris_nice[1:4], 3)
+
+# size: the number of observations associated with each cluster
+# cluster: cluster assigned to each observations
+
+# bind the cluster number together with the original data
+iris_cl <- data.frame(iris_nice, cluster_no = factor(iris_km$cluster))
+
+# plot different clusters
+ggplot(data = iris_cl) +
+  geom_point(aes(x = sepal_length,
+                 y = sepal_width, 
+                 color = cluster_no))
+
+plot_ly(x = iris_cl$petal_length, 
+        y = iris_cl$petal_width, 
+        z = iris_cl$sepal_width, 
+        type = "scatter3d", 
+        color = iris_cl$cluster_no)
+```
+
+- `stats::hcluster()` agglomerative hierarchical clustering
+- `stats::diana()` divisive hierarchical clustering
+
+```{r}
+## Hierarchical cluster analysis
+
+wb_env <- read_csv(here("data", "wb_env.csv"))
+
+wb_ghg_20 <- wb_env %>% 
+  arrange(desc(ghg)) %>% 
+  top_n(20) # can get the top 20 in each group if there is a group
+# top_frac() top fraction of the group
+
+wb_scaled <- as.data.frame(scale(wb_ghg_20[3:7])) 
+
+# in clustering, use any id as rownames and only do cluster on numbers
+
+rownames(wb_scaled) <- wb_ghg_20$name
+
+# Find distances between all observations, create dissimilarity matrix
+
+diss <- dist(wb_scaled, method = "euclidean", upper = TRUE)
+
+# Use euclidean distances to do some complete agglomerative clustering 
+
+hc_complete <- hclust(diss, method = "complete")
+
+plot(hc_complete,  cex = 0.6, hang = -9)
+
+ggdendrogram(data = hc_complete,
+             rotate = TRUE) +
+  labs(x = "Country") +
+  theme_bw()
+```
+
+
+
+
+
+
+
+
+
+
+
